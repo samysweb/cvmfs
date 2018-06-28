@@ -35,6 +35,7 @@
 // 26: CernVM-FS 2.5.0
 #define LIBCVMFS_REVISION 26
 
+#include <inttypes.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -99,7 +100,7 @@ struct cvmfs_stat {
 
   // Actual contents of stat, mapped from DirectoryEntry
   uint64_t st_ino;
-  unsigned int st_mode;
+  mode_t st_mode;
   uint32_t st_nlink;
   uid_t    st_uid;
   gid_t    st_gid;
