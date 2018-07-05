@@ -37,6 +37,7 @@
 
 #include <inttypes.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 // Legacy error codes
@@ -99,16 +100,16 @@ struct cvmfs_stat {
   uint64_t size;
 
   // Actual contents of stat, mapped from DirectoryEntry
-  uint64_t st_ino;
+  ino_t st_ino;
   mode_t st_mode;
-  uint32_t st_nlink;
+  nlink_t st_nlink;
   uid_t    st_uid;
   gid_t    st_gid;
   dev_t    st_rdev;
-  uint64_t st_size;
-  uint64_t st_blksize;
-  uint64_t st_blocks;
-  time_t   mtime;
+  off_t st_size;
+  blksize_t st_blksize;
+  blkcnt_t st_blocks;
+  struct timespec   mtime;
 
   // CVMFS related content
   const void * cvm_checksum;
