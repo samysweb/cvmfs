@@ -112,7 +112,7 @@ struct cvmfs_stat {
   struct timespec   mtime;
 
   // CVMFS related content
-  const void * cvm_checksum;
+  const char * cvm_checksum;
   const char * cvm_symlink;
   const char * cvm_name;
   void *       cvm_xattrs;
