@@ -109,7 +109,7 @@ struct cvmfs_stat {
   off_t st_size;
   blksize_t st_blksize;
   blkcnt_t st_blocks;
-  struct timespec   mtime;
+  time_t   mtime;
 
   // CVMFS related content
   const char * cvm_checksum;
