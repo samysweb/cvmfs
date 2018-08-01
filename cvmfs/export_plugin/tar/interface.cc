@@ -8,6 +8,8 @@
 #include "export_plugin/fs_traversal_interface.h"
 #include "util/posix.h"
 
+#include "tar_object.h"
+
 // Some tar inspirations from https://github.com/LucasSeveryn/pintOS/blob/master/src/lib/ustar.c
 
 
@@ -27,7 +29,7 @@ int tar_set_meta(struct fs_traversal_context *ctx,
   const char *path, const struct cvmfs_attr *stat_info) {
 
 }
-const char *tar_get_identifier(struct fs_traversal_context *ctx,
+char *tar_get_identifier(struct fs_traversal_context *ctx,
   const struct cvmfs_attr *stat) {
   
 }
@@ -117,34 +119,7 @@ struct fs_traversal_tar_context {
   FILE *fd;
 };
 
-int setup_basic_tar_file(std::string path) {
-  // TODO(steuber): Make more robust (error handling)
-  struct ustar_header cvmfs_dir = BuildHeader(
-    "cvmfs",
-    0777,
-    0,
-    0,
-    0,
-    time(NULL),
-    USTAR_DIRECTORY,
-    "root",
-    "root");
-  struct ustar_header data_dir = BuildHeader(
-    "cvmfs/.data",
-    0777,
-    0,
-    0,
-    0,
-    time(NULL),
-    USTAR_DIRECTORY,
-    "root",
-    "root");
-  FILE *tar_file = fopen(path.c_str(), "w");
-  fwrite(&cvmfs_dir, sizeof(struct ustar_header), 1, tar_file);
-  fwrite(&data_dir, sizeof(struct ustar_header), 1, tar_file);
-  fclose(tar_file);
-  printf("%s", path.c_str());
-}
+
 
 struct fs_traversal_context *tar_initialize(
   const char *repo,
@@ -157,9 +132,13 @@ struct fs_traversal_context *tar_initialize(
   if (base == NULL) {
     base = "/tmp/cvmfs-shrinkwrap.tar";
   }
-  if (!FileExists(base)) {
-    setup_basic_tar_file(base);
+  TarObject *destination;
+  if (FileExists(base)) {
+     destination = new TarObject(base);
+  } else {
+    destination = new TarObject();
   }
+  result->ctx = destination;
 }
 
 void tar_finalize(struct fs_traversal_context *ctx) {

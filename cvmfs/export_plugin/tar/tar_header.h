@@ -1,8 +1,8 @@
 /**
  * This file is part of the CernVM File System.
  */
-#ifndef CVMFS_EXPORT_PLUGIN_TAR_PAR_TAR_TAR_HEADER_H_
-#define CVMFS_EXPORT_PLUGIN_TAR_PAR_TAR_TAR_HEADER_H_
+#ifndef CVMFS_EXPORT_PLUGIN_TAR_TAR_HEADER_H_
+#define CVMFS_EXPORT_PLUGIN_TAR_TAR_HEADER_H_
 
 #include <stddef.h>
 #include <string.h>
@@ -10,10 +10,10 @@
 #include <string>
 
 enum ustar_type {
-  USTAR_REGULAR = '0',        // Ordinary file.
-  USTAR_LINK = '1',           // Hard Link
-  USTAR_SYMLINK = '2',         // Symlink
-  USTAR_DIRECTORY = '5',      // Directory.
+  kUstarReg = '0',      // Ordinary file.
+  kUstarLink = '1',     // Hard Link
+  kUstarSym = '2',      // Symlink
+  kUstarDir = '5',      // Directory.
 };
 
 /* Header for ustar-format tar archive.  See man pages */
@@ -40,8 +40,7 @@ struct ustar_header {
     char padding[12];           // Pad to 512 bytes. */
 } __attribute__((__packed__));
 
-unsigned int CalculateChecksum(const struct ustar_header *h)
-{
+unsigned int CalculateChecksum(const struct ustar_header *h) {
   const uint8_t *header = (const uint8_t *) h;
   unsigned int chksum = 0;
   size_t i;
@@ -86,4 +85,4 @@ struct ustar_header BuildHeader(
   return result;
 }
 
-#endif  // CVMFS_EXPORT_PLUGIN_TAR_PAR_TAR_TAR_HEADER_H_
+#endif  // CVMFS_EXPORT_PLUGIN_TAR_TAR_HEADER_H_
