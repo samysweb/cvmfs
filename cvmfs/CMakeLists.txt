@@ -186,6 +186,10 @@ set (CVMFS_SHRINKWRAP_SOURCES
   export_plugin/posix/garbage_collector.cc
   export_plugin/posix/helpers.cc
   export_plugin/posix/interface.cc
+
+  export_plugin/tar/interface.cc
+  export_plugin/tar/tar_helper.cc
+  export_plugin/tar/tar_object.cc
   
   export_plugin/fs_traversal_libcvmfs.cc 
   export_plugin/spec_tree.cc 

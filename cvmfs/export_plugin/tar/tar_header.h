@@ -4,7 +4,9 @@
 #ifndef CVMFS_EXPORT_PLUGIN_TAR_TAR_HEADER_H_
 #define CVMFS_EXPORT_PLUGIN_TAR_TAR_HEADER_H_
 
+#include <inttypes.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <string>
@@ -39,6 +41,9 @@ struct ustar_header {
                                 // Null-terminated if room.
     char padding[12];           // Pad to 512 bytes. */
 } __attribute__((__packed__));
+
+
+// Some tar inspirations from https://github.com/LucasSeveryn/pintOS/blob/master/src/lib/ustar.c
 
 unsigned int CalculateChecksum(const struct ustar_header *h) {
   const uint8_t *header = (const uint8_t *) h;

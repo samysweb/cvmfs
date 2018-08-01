@@ -1,9 +1,11 @@
 /**
  * This file is part of the CernVM File System.
  */
+#include <string>
+
 #include "tar_helper.h"
 
-bool SetupBasicTarFile(std::string path) {
+/*bool SetupBasicTarFile(std::string path) {
   // TODO(steuber): Make more robust (error handling)
   int res = 0;
   FILE *tar_file = fopen(path.c_str(), "w");
@@ -39,6 +41,6 @@ bool SetupBasicTarFile(std::string path) {
   fwrite(&data_dir, sizeof(struct ustar_header), 1, tar_file);
   fclose(tar_file);
   printf("%s", path.c_str());
-}
+}*/
 
 #include "tar_header.h"

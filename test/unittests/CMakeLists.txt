@@ -495,7 +495,6 @@ set (CVMFS_TEST_EXPORT_SOURCES
   #export_plugin/main.cc
 
   export_plugin/test_stuff.cc
-  ${CVMFS_SOURCE_DIR}/export_plugin/fs_traversal_tar.cc
 
   ../common/env.cc
   ../common/testutil.cc
@@ -511,6 +510,9 @@ set (CVMFS_TEST_EXPORT_SOURCES
   ${CVMFS_SOURCE_DIR}/export_plugin/posix/garbage_collector.cc
   ${CVMFS_SOURCE_DIR}/export_plugin/posix/helpers.cc
   ${CVMFS_SOURCE_DIR}/export_plugin/posix/interface.cc
+  ${CVMFS_SOURCE_DIR}/export_plugin/tar/interface.cc
+  ${CVMFS_SOURCE_DIR}/export_plugin/tar/tar_helper.cc
+  ${CVMFS_SOURCE_DIR}/export_plugin/tar/tar_object.cc
   ${CVMFS_SOURCE_DIR}/export_plugin/fs_traversal_libcvmfs.cc
   ${CVMFS_SOURCE_DIR}/export_plugin/util.cc
 
