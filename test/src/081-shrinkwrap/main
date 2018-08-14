@@ -71,7 +71,7 @@ cvmfs_run_test() {
 
     echo "*** Creating specification file..."
 
-    sudo python $TEST_ROOT/../add-ons/export_plugin/spec_builder.py /tmp/cvmfs-$repo.trace.log /tmp/cvmfs-$repo.spec.txt
+    sudo python $TEST_ROOT/../cvmfs/shrinkwrap/scripts/spec_builder.py /tmp/cvmfs-$repo.trace.log /tmp/cvmfs-$repo.spec.txt
     result=$?
 
     if [[ $result != 0 ]]; then
@@ -82,7 +82,7 @@ cvmfs_run_test() {
 
     echo "*** Creating shrinkwrapped repository..."
 
-    sudo cvmfs_shrinkwrap -r $repo -f $TEST_ROOT/src/081-shrinkwrap/$repo.config -t /tmp/cvmfs-$repo.spec.txt
+    sudo cvmfs_shrinkwrap -r $repo -f $TEST_ROOT/src/081-shrinkwrap/$repo.config -t /tmp/cvmfs-$repo.spec.txt -j 32
     result=$?
 
     if [[ $result != 0 ]]; then

@@ -618,14 +618,16 @@ TEST_P(T_Fs_Traversal_Interface, TransferPosixToPosix) {
 
   perf::Statistics *statistics = shrinkwrap::GetSyncStatTemplate();
 
-  ASSERT_TRUE(shrinkwrap::SyncFull(src, dest, statistics));
+  ASSERT_TRUE(shrinkwrap::SyncFull(src, dest, statistics,
+    new vector<shrinkwrap::RecDir*>()));
 
   dest->finalize(dest->context_);
   context = dest->initialize(
     dest_name.c_str(), repoName.c_str(), dest_data.c_str(), NULL, 4);
   dest->context_ = context;
 
-  ASSERT_TRUE(shrinkwrap::SyncFull(src, dest, statistics));
+  ASSERT_TRUE(shrinkwrap::SyncFull(src, dest, statistics,
+    new vector<shrinkwrap::RecDir*>()));
   std::string command = "diff -aq ";
   command += repoName + "/" + dest_name;
   command += " " + repoName + "/" + src_name;

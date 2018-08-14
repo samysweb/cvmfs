@@ -47,13 +47,28 @@ int strcmp_list(const void* a, const void* b)
 
 namespace shrinkwrap {
 
+bool copyFile(
+  struct fs_traversal *src_fs,
+  const char *src_name,
+  struct fs_traversal *dest_fs,
+  const char *dest_name,
+  perf::Statistics *pstats
+);
+
 namespace {
 
-// No destructor is written to prevent double free and
-// corruption of string pointers. After the copy written
-// to the pipe, the new copy falls out of scope and
-// is destroyed. If there is a destructor that frees the
-// strings they get deleted after writing to the pipe.
+struct MainWorkerContext {
+  struct fs_traversal *src_fs;
+  struct fs_traversal *dest_fs;
+  perf::Statistics *pstats;
+  int parallel;
+};
+
+struct MainWorkerSpecificContext {
+  struct MainWorkerContext *mwc;
+  int num_thread;
+};
+
 class FileCopy {
  public:
   FileCopy()
@@ -63,6 +78,12 @@ class FileCopy {
   FileCopy(char *src, char *dest)
     : src(strdup(src))
     , dest(strdup(dest)) {}
+  ~FileCopy() {
+    if (src != NULL) {
+      free(src);
+      free(dest);
+    }
+  }
 
   bool IsTerminateJob() const {
     return ((src == NULL) && (dest == NULL));
@@ -72,32 +93,127 @@ class FileCopy {
   char *dest;
 };
 
-class RecDir {
+class JobManager {
  public:
-  RecDir()
-    : dir(NULL)
-    , recursive(false) {}
-
-  RecDir(const char *dir, bool recursive)
-    : dir(strdup(dir))
-    , recursive(recursive) {}
-
-  ~RecDir() {
-    free(dir);
+  explicit JobManager(unsigned total_thread_num_param) {
+    total_thread_num_ = total_thread_num_param;
+    waiting_threads_ = 0;
+    terminate_ = 0;
+    allow_termination_ = false;
+  }
+  void AllowTermination() {
+    int res = pthread_mutex_lock(&queue_lock_);
+    assert(res == 0);
+    allow_termination_ = true;
+    res = pthread_mutex_unlock(&queue_lock_);
+    assert(res == 0);
+    res = pthread_cond_broadcast(&task_availability_);
+    assert(res == 0);
+  }
+  bool SubmitCopyJob(FileCopy *job) {
+    int res = pthread_mutex_lock(&queue_lock_);
+    assert(res == 0);
+    if (copy_jobs_.size() < MAX_JOB_QUEUE) {
+      copy_jobs_.push_back(job);
+      res = pthread_mutex_unlock(&queue_lock_);
+      assert(res == 0);
+      res = pthread_cond_signal(&task_availability_);
+      assert(res == 0);
+      return true;
+    }
+    res = pthread_mutex_unlock(&queue_lock_);
+    assert(res == 0);
+    return false;
+  }
+  bool SubmitDirJob(RecDir *job) {
+    int res = pthread_mutex_lock(&queue_lock_);
+    assert(res == 0);
+    if (dir_jobs_.size() < MAX_JOB_QUEUE) {
+      dir_jobs_.push_back(job);
+      res = pthread_mutex_unlock(&queue_lock_);
+      assert(res == 0);
+      res = pthread_cond_signal(&task_availability_);
+      assert(res == 0);
+      return true;
+    }
+    res = pthread_mutex_unlock(&queue_lock_);
+    assert(res == 0);
+    return false;
+  }
+  /**
+   * @returns true if execution should be continued, false if not
+   */
+  bool RunJob(struct MainWorkerContext *mwc) {
+    bool result = true;
+    int res = pthread_mutex_lock(&queue_lock_);
+    assert(res == 0);
+    while (terminate_ == 0 && copy_jobs_.size() == 0 && dir_jobs_.size() == 0) {
+      waiting_threads_++;
+      if (waiting_threads_ == total_thread_num_ && allow_termination_) {
+        terminate_ = 1;
+        res = pthread_cond_broadcast(&task_availability_);
+        assert(res == 0);
+        result = false;
+        continue;
+      }
+      res = pthread_cond_wait(&task_availability_, &queue_lock_);
+      if (terminate_ > 0) {
+        result = false;
+      }
+      assert(res == 0);
+      waiting_threads_--;
+    }
+    if (result && copy_jobs_.size() > 0) {  // Copy the file...
+      FileCopy *next_copy = copy_jobs_.back();
+      copy_jobs_.pop_back();
+      res = pthread_mutex_unlock(&queue_lock_);
+      assert(res == 0);
+      if (!next_copy->src || !next_copy->dest) {
+        return result;
+      }
+      if (!copyFile(mwc->src_fs, next_copy->src, mwc->dest_fs,
+                    next_copy->dest, mwc->pstats)) {
+        LogCvmfs(kLogCvmfs, kLogStderr,
+        "File %s failed to copy\n", next_copy->src);
+      }
+      perf::Counter *files_transferred
+      = mwc->pstats->Lookup(SHRINKWRAP_STAT_FILE_COUNT);
+      files_transferred->Inc();
+      delete next_copy;
+    } else if (result && dir_jobs_.size() > 0) {  // Synchronize directory
+      RecDir *next_job = dir_jobs_.back();
+      dir_jobs_.pop_back();
+      res = pthread_mutex_unlock(&queue_lock_);
+      assert(res == 0);
+      vector<RecDir*> *dirs_ = new vector<RecDir*>();
+      dirs_->push_back(next_job);
+      if (!SyncFull(mwc->src_fs, mwc->dest_fs, mwc->pstats, dirs_)) {
+        LogCvmfs(kLogCvmfs, kLogStderr,
+        "Failed to synchronize directory %s\n", next_job->dir);
+      }
+      delete dirs_;
+    } else {
+      res = pthread_mutex_unlock(&queue_lock_);
+      assert(res == 0);
+    }
+    return result;
   }
 
-  char *dir;
-  bool recursive;
+ private:
+  pthread_cond_t task_availability_ = PTHREAD_COND_INITIALIZER;
+  pthread_mutex_t queue_lock_ = PTHREAD_MUTEX_INITIALIZER;
+  vector<FileCopy*> copy_jobs_;
+  vector<RecDir*> dir_jobs_;
+  unsigned waiting_threads_;
+  int terminate_;
+  unsigned total_thread_num_;
+  bool allow_termination_;
 };
 
 unsigned             num_parallel_ = 0;
 bool                 recursive = true;
-int                  pipe_chunks[2];
-// required for concurrent reading
-pthread_mutex_t      lock_pipe = PTHREAD_MUTEX_INITIALIZER;
-atomic_int64         copy_queue;
 
-vector<RecDir*>      dirs_;
+JobManager           *job_manager;
 
 unsigned             retries_ = 0;
 
@@ -336,12 +452,13 @@ bool handle_file(
   // Touch is atomic, if it fails something else will write file
   if (!dest->touch(dest->context_, src_st)) {
     char *src_ident = src->get_identifier(src->context_, src_st);
+    bool parallelized = false;
     if (num_parallel_) {
-      FileCopy next_copy(src_ident, dest_data);
-
-      WritePipe(pipe_chunks[1], &next_copy, sizeof(next_copy));
-      atomic_inc64(&copy_queue);
-    } else {
+      FileCopy *next_copy = new FileCopy(src_ident, dest_data);
+      parallelized = job_manager->SubmitCopyJob(next_copy);
+      if (!parallelized) delete next_copy;
+    }
+    if (!parallelized) {
       if (!copyFile(src, src_ident, dest, dest_data, pstats)) {
         LogCvmfs(kLogCvmfs, kLogStderr,
           "Failed to copy %s->%s : %d : %s",
@@ -395,8 +512,12 @@ bool handle_dir(
   return true;
 }
 
-void add_dir_for_sync(const char *dir, bool recursive) {
-  dirs_.push_back(new RecDir(dir, recursive));
+void add_dir_for_sync(const char *dir, bool recursive, vector<RecDir*> *dirs_) {
+  RecDir *new_job = new RecDir(dir, recursive);
+  bool succeeded = job_manager->SubmitDirJob(new_job);
+  if (!succeeded) {
+    dirs_->push_back(new_job);
+  }
 }
 
 // Compares possibly null strings.
@@ -418,7 +539,8 @@ bool Sync(
   struct fs_traversal *src,
   struct fs_traversal *dest,
   bool recursive,
-  perf::Statistics *pstats) {
+  perf::Statistics *pstats,
+  vector<RecDir*> *dirs_) {
   bool result = true;
   int cmp = 0;
 
@@ -465,7 +587,7 @@ bool Sync(
         && (dest_st->cvm_checksum == NULL
           || dest->is_hash_consistent(dest->context_, dest_st))) {
         if (S_ISDIR(src_st->st_mode) && recursive) {
-          add_dir_for_sync(src_entry, recursive);
+          add_dir_for_sync(src_entry, recursive, dirs_);
         }
         continue;
       }
@@ -479,7 +601,7 @@ bool Sync(
           if (!handle_dir(src, src_st, dest, dest_st, src_entry))
             result = false;
           if (result && recursive)
-            add_dir_for_sync(src_entry, recursive);
+            add_dir_for_sync(src_entry, recursive, dirs_);
           break;
         case S_IFLNK:
           // Should likely copy the source of the symlink target
@@ -514,7 +636,7 @@ bool Sync(
           // are removed before trying to remove the directory. If
           // tail recursed, do_rmdir will fail as there are still
           // contents.
-          if (!Sync(dest_entry, src, dest, true, pstats)) {
+          if (!Sync(dest_entry, src, dest, true, pstats, dirs_)) {
             result = false;
             break;
           }
@@ -550,77 +672,45 @@ bool Sync(
 bool SyncFull(
   struct fs_traversal *src,
   struct fs_traversal *dest,
-  perf::Statistics *pstats) {
-  if (dirs_.empty()) {
-    dirs_.push_back(new RecDir("", true));
+  perf::Statistics *pstats,
+  vector<RecDir*> *dirs_) {
+  bool result = true;
+  if (dirs_->empty()) {
+    dirs_->push_back(new RecDir("", true));
   }
-  while (!dirs_.empty()) {
-    RecDir *next_dir = dirs_.back();
-    dirs_.pop_back();
+  while (!dirs_->empty()) {
+    RecDir *next_dir = dirs_->back();
+    dirs_->pop_back();
 
-    if (!Sync(next_dir->dir, src, dest, next_dir->recursive, pstats)) {
+    if (result
+      && !Sync(next_dir->dir, src, dest, next_dir->recursive, pstats, dirs_)) {
       LogCvmfs(kLogCvmfs, kLogStderr,
         "File %s failed to copy\n", next_dir->dir);
-      return false;
+      result = false;
     }
 
     delete next_dir;
   }
-  return true;
+
+  return result;
 }
-
-struct MainWorkerContext {
-  struct fs_traversal *src_fs;
-  struct fs_traversal *dest_fs;
-  perf::Statistics *pstats;
-  int parallel;
-};
-
-struct MainWorkerSpecificContext {
-  struct MainWorkerContext *mwc;
-  int num_thread;
-};
 
 static void *MainWorker(void *data) {
   MainWorkerSpecificContext *sc = static_cast<MainWorkerSpecificContext*>(data);
   MainWorkerContext *mwc = sc->mwc;
-  perf::Counter *files_transferred
-    = mwc->pstats->Lookup(SHRINKWRAP_STAT_FILE_COUNT);
   time_t last_print_time = 0;
   if (sc->num_thread == 0) {
     last_print_time = time(NULL);
   }
-
-  while (1) {
+  bool continueWork = true;
+  while (continueWork) {
     if (sc->num_thread == 0 && time(NULL)-last_print_time > 10) {
       LogCvmfs(kLogCvmfs, kLogStdout,
         "%s",
         mwc->pstats->PrintList(perf::Statistics::kPrintSimple).c_str());
       last_print_time = time(NULL);
     }
-    FileCopy next_copy;
-    pthread_mutex_lock(&lock_pipe);
-    ReadPipe(pipe_chunks[0], &next_copy, sizeof(next_copy));
-    pthread_mutex_unlock(&lock_pipe);
-    if (next_copy.IsTerminateJob())
-      break;
-
-    if (!next_copy.src || !next_copy.dest) {
-      continue;
-    }
-    if (!copyFile(mwc->src_fs, next_copy.src, mwc->dest_fs,
-                  next_copy.dest, mwc->pstats)) {
-      LogCvmfs(kLogCvmfs, kLogStderr,
-      "File %s failed to copy\n", next_copy.src);
-    }
-    files_transferred->Inc();
-
-    // Noted in FileCopy: This is freed here to prevent the strings from being
-    // double freed when a FileCopy goes out of scope here and at WritePipe
-    free(next_copy.src);
-    free(next_copy.dest);
-
-    atomic_dec64(&copy_queue);
+    continueWork = job_manager->RunJob(mwc);
   }
   return NULL;
 }
@@ -654,9 +744,6 @@ int SyncInit(
 
   perf::Statistics *pstats = GetSyncStatTemplate();
 
-  // Initialization
-  atomic_init64(&copy_queue);
-
   pthread_t *workers = NULL;
 
   struct MainWorkerSpecificContext *specificWorkerContexts = NULL;
@@ -664,6 +751,7 @@ int SyncInit(
   MainWorkerContext *mwc = NULL;
 
   if (num_parallel_ > 0) {
+    job_manager = new JobManager(num_parallel_);
     workers =
     reinterpret_cast<pthread_t *>(smalloc(sizeof(pthread_t) * num_parallel_));
 
@@ -673,7 +761,6 @@ int SyncInit(
 
     mwc = new struct MainWorkerContext;
     // Start Workers
-    MakePipe(pipe_chunks);
     LogCvmfs(kLogCvmfs, kLogStdout, "Starting %u workers", num_parallel_);
     mwc->src_fs = src;
     mwc->dest_fs = dest;
@@ -693,29 +780,24 @@ int SyncInit(
     delete spec_tree_;
     spec_tree_ = SpecTree::Create(spec);
   }
-
-  add_dir_for_sync(base, recursive);
-  int result = !SyncFull(src, dest, pstats);
-
-  while (atomic_read64(&copy_queue) != 0) {
-    SafeSleepMs(100);
-  }
+  vector<RecDir*> *dirs_ = new vector<RecDir*>();
+  dirs_->push_back(new RecDir(base, recursive));
+  int result = !SyncFull(src, dest, pstats, dirs_);
+  delete dirs_;
 
 
   if (num_parallel_ > 0) {
-    LogCvmfs(kLogCvmfs, kLogStdout, "Stopping %u workers", num_parallel_);
-    for (unsigned i = 0; i < num_parallel_; ++i) {
-      FileCopy terminate_workers;
-      WritePipe(pipe_chunks[1], &terminate_workers, sizeof(terminate_workers));
-    }
+    LogCvmfs(kLogCvmfs, kLogStdout, "Waiting for %u workers", num_parallel_);
+    job_manager->AllowTermination();
     for (unsigned i = 0; i < num_parallel_; ++i) {
       int retval = pthread_join(workers[i], NULL);
       assert(retval == 0);
     }
-    ClosePipe(pipe_chunks);
-    delete workers;
-    delete specificWorkerContexts;
+    LogCvmfs(kLogCvmfs, kLogStdout, "%u workers stopped", num_parallel_);
+    free(workers);
+    free(specificWorkerContexts);
     delete mwc;
+    delete job_manager;
   }
   LogCvmfs(kLogCvmfs, kLogStdout,
         "%s",
