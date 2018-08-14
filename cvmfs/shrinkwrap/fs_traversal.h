@@ -22,7 +22,7 @@
 #define SHRINKWRAP_STAT_DEDUPED_FILES "dedupedFiles"
 #define SHRINKWRAP_STAT_DEDUPED_BYTES "dedupedBytes"
 
-#define MAX_JOB_QUEUE 128
+#define MAX_JOB_QUEUE 4096
 
 using namespace std; // NOLINT
 
