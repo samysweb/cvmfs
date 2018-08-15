@@ -24,6 +24,7 @@ const char kDigitsPerDirLevel = 2;
 struct fs_traversal_posix_context {
   int num_threads;
   std::map<ino_t, bool> gc_flagged;
+  pthread_mutex_t touch_lock;
 };
 
 /**

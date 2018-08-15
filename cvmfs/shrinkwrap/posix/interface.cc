@@ -425,10 +425,14 @@ int posix_touch(struct fs_traversal_context *ctx,
   }
   std::string hidden_datapath = BuildHiddenPath(ctx, identifier);
   free(identifier);
+  struct fs_traversal_posix_context *posix_ctx
+    = reinterpret_cast<struct fs_traversal_posix_context *>(ctx->ctx);
+  pthread_mutex_lock(&(posix_ctx->touch_lock));
   int res1 = open(
     hidden_datapath.c_str(),
     O_CREAT | O_EXCL,
     stat_info->st_mode);
+  pthread_mutex_unlock(&(posix_ctx->touch_lock));
   if (res1 < 0) return -1;
   int res2 = close(res1);
   if (res2 < 0) return -1;
@@ -682,6 +686,7 @@ struct fs_traversal_context *posix_initialize(
   struct fs_traversal_posix_context *posix_ctx
     = new struct fs_traversal_posix_context;
   posix_ctx->num_threads = num_threads;
+  pthread_mutex_init(&(posix_ctx->touch_lock), NULL);
   result->ctx = posix_ctx;
 
   LogCvmfs(kLogCvmfs, kLogStdout,
@@ -752,6 +757,7 @@ void posix_finalize(struct fs_traversal_context *ctx) {
   free(ctx->lib_version);
   struct fs_traversal_posix_context *posix_ctx
     =  reinterpret_cast<struct fs_traversal_posix_context*>(ctx->ctx);
+  pthread_mutex_destroy(&(posix_ctx->touch_lock));
   delete posix_ctx;
   delete ctx;
 }
