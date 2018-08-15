@@ -425,7 +425,10 @@ int posix_touch(struct fs_traversal_context *ctx,
   }
   std::string hidden_datapath = BuildHiddenPath(ctx, identifier);
   free(identifier);
-  int res1 = creat(hidden_datapath.c_str(), stat_info->st_mode);
+  int res1 = open(
+    hidden_datapath.c_str(),
+    O_CREAT | O_EXCL,
+    stat_info->st_mode);
   if (res1 < 0) return -1;
   int res2 = close(res1);
   if (res2 < 0) return -1;
