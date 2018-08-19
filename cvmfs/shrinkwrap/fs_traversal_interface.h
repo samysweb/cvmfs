@@ -6,7 +6,7 @@
 
 #include "libcvmfs.h"
 
-#define COPY_BUFFER_SIZE 4096
+#define COPY_BUFFER_SIZE 1048576
 
 struct fs_traversal_context {
   uint64_t version;
